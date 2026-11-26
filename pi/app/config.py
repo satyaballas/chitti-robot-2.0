@@ -64,4 +64,5 @@ VOICES = {                      # language -> Piper voice name (downloaded into 
     "en": "en_US-ryan-medium",          # others: en_US-lessac-medium, en_GB-alan-medium, en_US-amy-medium
     "te": "te_IN-venkatesh-medium",     # others: te_IN-maya-medium, te_IN-padmavathi-medium
 }
-SPEAKER_DEVICE = "plughw:CARD=MS,DEV=0"   # from the profile (3.5mm jack: "plughw:CARD=Headphones,DEV=0")
+ROBOT_VOICE = "off"             # robot effect on the voice: off | light | classic | heavy (mouth.py)
+SPEAKER_DEVICE ="plughw:CARD=MS,DEV=0"   # from the profile (3.5mm jack: "plughw:CARD=Headphones,DEV=0")
