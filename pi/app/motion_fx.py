@@ -12,7 +12,7 @@ import math
 from PIL import Image, ImageDraw
 
 C = 120            # centre of the 240x240 screen
-NAMES = ("go_forward", "go_back", "turn_left", "turn_right", "dance")
+NAMES = ("go_forward", "go_back", "turn_left", "turn_right", "dance", "listen")
 
 
 def _ease(k):
@@ -74,8 +74,29 @@ def _sparkles(d, now):
             d.polygon(pts, fill=(int(255 * tw), int(255 * tw), int(200 * tw)))
 
 
-def pre(name, p, el, secs, now):
+def _voice_bars(d, now, level):
+    """A little equaliser under the eyes: breathes when quiet, jumps with the voice (level 0..1)."""
+    n, w, gap = 9, 9, 6
+    x0 = C - (n * w + (n - 1) * gap) / 2
+    base = 196
+    for i in range(n):
+        centre = 1 - abs(i - (n - 1) / 2) / ((n - 1) / 2)          # taller in the middle
+        idle = 3 + 3 * (0.5 + 0.5 * math.sin(now * 3 + i * 0.7))
+        voice = level * (10 + 26 * centre) * (0.6 + 0.4 * abs(math.sin(now * 11 + i * 1.9)))
+        h = idle + voice
+        x = x0 + i * (w + gap)
+        g = 0.55 + 0.45 * min(1.0, level * 1.5)
+        col = (int(90 * g), int(230 * g), int(255 * g))
+        d.rounded_rectangle((x, base - h, x + w, base + h), radius=4, fill=col)
+
+
+def pre(name, p, el, secs, now, level=0.0):
     p_right = None
+    if name == "listen":
+        p["open"] = min(1.0, p["open"] + 0.1 * level)               # eyes widen a little as you talk
+        p["py"] = -0.25 + 0.05 * math.sin(now * 2)
+        p["px"] = 0.15 * math.sin(now * 0.9)                         # small attentive glances
+        return p, p_right
     if name == "go_back":
         # nervous little shiver of the pupils
         p["px"] += 0.08 * math.sin(now * 25)
@@ -92,8 +113,16 @@ def pre(name, p, el, secs, now):
     return p, p_right
 
 
-def post(name, img, el, secs, now):
+def post(name, img, el, secs, now, level=0.0):
     end = max(0.0, secs - el)
+    if name == "listen":
+        # perk up (quick stretch), then hold a head-cocked listening pose that bobs gently with the voice
+        perk = math.exp(-7 * el) * math.sin(min(math.pi, el * 12))
+        tilt = 0.14 * _ease(el / 0.35)
+        img = _affine(img, 1 - 0.06 * perk, 1 + 0.18 * perk + 0.03 * level, dy=-14 * perk - 12 - 3 * level,
+                      shear=tilt)
+        _voice_bars(ImageDraw.Draw(img), now, level)
+        return img
     if name == "go_forward":
         if el < 0.25:                                       # anticipation: squash down
             k = _ease(el / 0.25)

@@ -64,6 +64,7 @@ def main():
         print(f"Audio: {profile['name']}")
         new = Ears()
         new.debug = args.debug
+        new.on_level = face.hear        # voice bars on the screen while listening
         if old:   # keep the already-loaded models
             new._whisper, new._wake, new.noise = old._whisper, old._wake, old.noise
             new._kws, new.wake_name = old._kws, old.wake_name

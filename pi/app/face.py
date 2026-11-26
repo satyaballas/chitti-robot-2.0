@@ -97,6 +97,7 @@ class Face:
         self._queue, self._step_end, self._in_anim = [], 0.0, False
         self._effect = None                     # (name, start, seconds)
         self._emoji = None                      # (name, start, until)
+        self._level = 0.0                       # mic loudness while listening (voice bars)
         self._asleep_since = 0.0
         self._target = EXPRESSIONS["neutral"]
         self._cur = dict(self._target)
@@ -130,8 +131,15 @@ class Face:
                 return                      # keep the expression Claude chose
             self._override = None
             self._set(MODE_EXPRESSION.get(name, "neutral"))
+            if name == "listening":
+                self._level = 0.0
+                self._effect = ("listen", now, 1e9)        # perk up, cock head, voice bars (motion_fx)
             if was_asleep and name != "idle":
                 self._play(REACTIONS["startled"], now)     # jolt awake
+
+    def hear(self, level):
+        """Mic loudness while listening (0 = quiet, 1 = clearly talking); drives the voice bars."""
+        self._level = max(float(level), self._level * 0.6)
 
     def express(self, name):
         with self._lock:
@@ -236,7 +244,8 @@ class Face:
                             self._set(what)
                         self._step_end = now + secs
                     else:
-                        self._in_anim, self._effect = False, None
+                        self._in_anim = False
+                        self._effect = ("listen", now, 1e9) if self._mode == "listening" else None
                         self._set(self._base())
 
                 # idle life: calm -> playful -> drowsy -> asleep
@@ -267,6 +276,8 @@ class Face:
                 k = min(1.0, (now - self._changed) / 0.3)
                 self._cur = eyes.blend(self._start, self._target, k * k * (3 - 2 * k))
                 p, p_right, effect = dict(self._cur), None, self._effect
+                self._level *= 0.85                     # voice bars fall back when the sound stops
+                level = self._level
                 stage = self._stage if mode == "idle" else None
                 emo = self._emoji if self._emoji and now < self._emoji[2] else None
                 if stage == "asleep":
@@ -287,7 +298,7 @@ class Face:
                 elif name == "nod":
                     p["open"] *= 1 - 0.9 * bump
                 elif name in fx.NAMES:      # movement animation (motion_fx.py)
-                    p, p_right = fx.pre(name, p, now - t0, secs, now)
+                    p, p_right = fx.pre(name, p, now - t0, secs, now, level)
             if mode == "speaking":  # gentle bounce while talking
                 p["open"] = p["open"] * (0.85 + 0.15 * abs(((now * 4) % 2) - 1))
 
@@ -300,6 +311,6 @@ class Face:
             else:
                 img = eyes.render(p, blinker(now), p_right=p_right, emoji=emoji_name, t=emoji_t)
                 if effect and effect[0] in fx.NAMES and now - effect[1] < effect[2]:
-                    img = fx.post(effect[0], img, now - effect[1], effect[2], now)
+                    img = fx.post(effect[0], img, now - effect[1], effect[2], now, level)
                 self.lcd.show(img)
                 time.sleep(max(0.0, 1 / 15 - (time.monotonic() - t_frame)))   # cap at 15 fps

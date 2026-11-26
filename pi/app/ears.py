@@ -48,6 +48,7 @@ class Ears:
         self.wake_name = config.WAKE_NAME
         self._whisper = None
         self.muted = False
+        self.on_level = None             # called with 0..1 mic loudness while recording (face voice bars)
         self.debug = False
         self.noise = 300.0               # room noise level (rms), updated while waiting for the wake word
 
@@ -161,6 +162,9 @@ class Ears:
         buf = np.zeros(0, dtype=np.int16)
         for chunk in self._chunks():
             frames.append(chunk)
+            if self.on_level:
+                rms = float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
+                self.on_level(min(1.0, max(0.0, (rms - self.noise) / max(1.0, 2 * loud - self.noise))))
             buf = np.concatenate([buf, chunk])
             while len(buf) >= VAD_FRAME:
                 frame, buf = buf[:VAD_FRAME], buf[VAD_FRAME:]
