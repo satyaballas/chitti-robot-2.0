@@ -1,0 +1,163 @@
+"""Chitti's ears: microphone, wake word, recording until you stop talking, and speech-to-text."""
+import math
+import queue
+import time
+
+import numpy as np
+import sounddevice as sd
+import webrtcvad
+from scipy.signal import resample_poly
+
+import config
+
+RATE = 16000
+CHUNK = 1280                     # 80 ms at 16 kHz (what openWakeWord expects)
+VAD_FRAME = 480                  # 30 ms at 16 kHz (what webrtcvad expects)
+
+
+class MicLost(Exception):
+    pass
+
+
+def find_audio_profile():
+    """Return the first AUDIO_PROFILES entry whose mic is plugged in (and apply it to config), or None."""
+    sd._terminate()          # re-scan devices so newly plugged ones show up
+    sd._initialize()
+    for p in config.AUDIO_PROFILES:
+        try:
+            sd.query_devices(p["mic"], "input")
+        except ValueError:
+            continue
+        config.MIC_DEVICE, config.MIC_RATE, config.MIC_GAIN = p["mic"], p["rate"], p["gain"]
+        config.SPEAKER_DEVICE = p["speaker"]
+        return p
+    return None
+
+
+class Ears:
+    def __init__(self):
+        self.q = queue.Queue()
+        g = math.gcd(RATE, config.MIC_RATE)
+        self._up, self._down = RATE // g, config.MIC_RATE // g   # e.g. 44100 -> 16000 = x160 / 441
+        self.stream = sd.InputStream(
+            device=config.MIC_DEVICE, samplerate=config.MIC_RATE, channels=1, dtype="int16",
+            blocksize=CHUNK * config.MIC_RATE // RATE, callback=self._on_audio)
+        self.vad = webrtcvad.Vad(config.VAD_AGGRESSIVENESS)
+        self._wake = None
+        self._whisper = None
+        self.muted = False
+        self.debug = False
+        self.noise = 300.0               # room noise level (rms), updated while waiting for the wake word
+
+    def _on_audio(self, data, frames, t, status):
+        if not self.muted:
+            self.q.put(data[:, 0].copy())
+
+    def _chunks(self):
+        """16 kHz int16 chunks of 80 ms."""
+        while True:
+            try:
+                x = self.q.get(timeout=5)
+            except queue.Empty:
+                if self.muted:
+                    continue
+                raise MicLost("no sound from the microphone for 5 s (unplugged?)")
+            y = resample_poly(x.astype(np.float32), self._up, self._down) * config.MIC_GAIN
+            yield np.clip(y, -32768, 32767).astype(np.int16)
+
+    def start(self):
+        self.stream.start()
+
+    def stop(self):
+        try:
+            self.stream.close()
+        except Exception:
+            pass
+
+    def flush(self):
+        while not self.q.empty():
+            self.q.get_nowait()
+
+    # ---- wake word -------------------------------------------------------------
+    def wait_for_wake_word(self):
+        if self._wake is None:
+            from openwakeword.model import Model
+            self._wake = Model(wakeword_models=[config.WAKE_WORD], inference_framework="onnx")
+        self._wake.reset()
+        self.flush()
+        best, levels, t_report = 0.0, [], time.monotonic()
+        for chunk in self._chunks():
+            scores = self._wake.predict(chunk)
+            score = max(scores.values())
+            rms = float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
+            # track the quiet room level: falls quickly, rises slowly (so speech doesn't count as noise)
+            self.noise = 0.7 * self.noise + 0.3 * rms if rms < self.noise else 0.995 * self.noise + 0.005 * rms
+            if self.debug:
+                best = max(best, score)
+                levels.append(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
+                if time.monotonic() - t_report >= 2:
+                    print(f"   [debug] mic level avg {np.mean(levels):5.0f} max {np.max(levels):5.0f} "
+                          f"room {self.noise:4.0f} | best wake score {best:.2f} (needs {config.WAKE_THRESHOLD})")
+                    best, levels, t_report = 0.0, [], time.monotonic()
+            if score >= config.WAKE_THRESHOLD:
+                self._wake.reset()
+                return
+
+    # ---- record one sentence ----------------------------------------------------
+    def record(self):
+        """Record until the speaker stops. Returns 16 kHz float32 audio, or None if nobody spoke."""
+        self.flush()
+        frames, spoke, silent_for, speech_run = [], False, 0.0, 0.0
+        loud = self.noise * config.SPEECH_LEVEL
+        t0 = time.monotonic()
+        buf = np.zeros(0, dtype=np.int16)
+        for chunk in self._chunks():
+            frames.append(chunk)
+            buf = np.concatenate([buf, chunk])
+            while len(buf) >= VAD_FRAME:
+                frame, buf = buf[:VAD_FRAME], buf[VAD_FRAME:]
+                level = float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
+                is_speech = self.vad.is_speech(frame.tobytes(), RATE) and level > loud
+                if is_speech:
+                    speech_run += VAD_FRAME / RATE
+                    silent_for = 0.0
+                    if speech_run >= config.SPEECH_START:
+                        spoke = True
+                else:
+                    speech_run = 0.0 if not spoke else speech_run
+                    silent_for += VAD_FRAME / RATE
+            elapsed = time.monotonic() - t0
+            if not spoke and elapsed > config.LISTEN_TIMEOUT:
+                return None
+            if spoke and (silent_for >= config.END_SILENCE or elapsed > config.MAX_UTTERANCE):
+                break
+        audio = np.concatenate(frames)
+        if self.debug:
+            import wave
+            with wave.open("/tmp/chitti-last.wav", "wb") as w:
+                w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE); w.writeframes(audio.tobytes())
+            rms = np.sqrt(np.mean(audio.astype(np.float32) ** 2))
+            print(f"   [debug] recorded {len(audio) / RATE:.1f}s, level {rms:.0f}, peak {np.abs(audio).max()}, "
+                  f"speech needed > {loud:.0f} -> /tmp/chitti-last.wav")
+        return audio.astype(np.float32) / 32768.0
+
+    # ---- speech to text -----------------------------------------------------------
+    def transcribe(self, audio):
+        """Returns (text, language)."""
+        if self._whisper is None:
+            import os
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")  # models are already downloaded; don't wait on the network
+            from faster_whisper import WhisperModel
+            self._whisper = WhisperModel(config.WHISPER_MODEL, device="cpu", compute_type="int8",
+                                         cpu_threads=4, download_root=f"{config.MODELS}/whisper")
+        lang = config.LANGUAGES[0]
+        english_only = config.WHISPER_MODEL.endswith(".en")
+        if len(config.LANGUAGES) > 1 and not english_only:
+            _, _, probs = self._whisper.detect_language(audio)
+            allowed = [(p, l) for l, p in probs if l in config.LANGUAGES]
+            if allowed:
+                lang = max(allowed)[1]
+        segments, _ = self._whisper.transcribe(
+            audio, language=None if english_only else lang, beam_size=1, vad_filter=False,
+            condition_on_previous_text=False, initial_prompt=config.WHISPER_HINT)
+        return " ".join(s.text.strip() for s in segments).strip(), lang

@@ -1,0 +1,21 @@
+# secrets - the Claude API key lives only on the Pi in ~/chitti/.env
+.env
+*.env
+*.key
+
+# SD card images (huge, and they contain the API key)
+*.img
+*.img.*
+*.dd
+*.dd.*
+*.zst
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# recordings / scratch
+*.wav
+.claude/

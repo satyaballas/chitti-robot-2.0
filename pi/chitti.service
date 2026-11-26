@@ -1,0 +1,18 @@
+[Unit]
+Description=Chitti robot (boot screen, eyes, voice assistant)
+After=sound.target local-fs.target systemd-udev-trigger.service
+
+[Service]
+User=pi
+Group=pi
+SupplementaryGroups=spi gpio audio
+WorkingDirectory=/home/pi/chitti/app
+ExecStart=/home/pi/chitti/venv/bin/python -u /home/pi/chitti/app/chitti.py
+KillSignal=SIGTERM
+TimeoutStopSec=8
+Restart=always
+RestartSec=3
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target
