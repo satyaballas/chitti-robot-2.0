@@ -52,6 +52,7 @@ On Raspberry Pi OS Lite 64-bit (Trixie): copy `pi/` to `~/chitti/` on the Pi, th
 4. `sudo bash setup-chitti-service.sh`: starts Chitti at boot.
 5. `sudo bash setup-power.sh`: lets Chitti shut down when you ask it to.
    Then `bash setup-wake-word.sh` (no sudo): installs the "Hey Chitti" wake word.
+   Optional: `sudo bash setup-bluetooth.sh` for a Bluetooth speaker (then pair it, and copy `asoundrc-bluetooth` to `~/.asoundrc`).
 6. Record the robot's remote: see [docs/wiring.md](docs/wiring.md#recording-and-testing-the-remote).
 
 Logs: `journalctl -u chitti -f`. Run by hand (after `sudo systemctl stop chitti`): `~/chitti/venv/bin/python ~/chitti/app/chitti.py --debug`.

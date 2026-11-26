@@ -65,4 +65,7 @@ VOICES = {                      # language -> Piper voice name (downloaded into 
     "te": "te_IN-venkatesh-medium",     # others: te_IN-maya-medium, te_IN-padmavathi-medium
 }
 ROBOT_VOICE = "off"             # robot effect on the voice: off | light | classic | heavy (mouth.py)
-SPEAKER_DEVICE ="plughw:CARD=MS,DEV=0"   # from the profile (3.5mm jack: "plughw:CARD=Headphones,DEV=0")
+# Bluetooth speaker (paired with setup-bluetooth.sh + bluetoothctl). Used whenever it's connected;
+# otherwise the profile's speaker below. "chitti_bt" is defined in ~/.asoundrc. Set to None to disable.
+BT_SPEAKER = dict(name="pTron BT Speaker", mac="17:2D:FB:D9:28:E5", pcm="chitti_bt")
+SPEAKER_DEVICE = "plughw:CARD=MS,DEV=0"   # from the profile (3.5mm jack: "plughw:CARD=Headphones,DEV=0")

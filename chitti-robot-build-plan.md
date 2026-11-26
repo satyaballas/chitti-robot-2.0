@@ -68,6 +68,8 @@ Decided: Claude, built-in wake word first. **Listening is English only for now**
 - Speaker: MAX98357A I2S amp + 3W 4Ω 40–50mm speaker. Wiring: BCLK → GPIO18 (pin 12), LRC → GPIO19 (pin 35), DIN → GPIO21 (pin 40), VIN → 5V, GND. (Alt: USB speakerphone.) Avoid ReSpeaker HATs.
 - Mute mic while robot speaks (echo).
 
+- **Bluetooth speaker (2026-11-26):** pTron BT Speaker paired via BlueALSA (`sudo bash setup-bluetooth.sh`, then `bluetoothctl` pair/trust/connect). `~/.asoundrc` defines `chitti_bt` (see `pi/asoundrc-bluetooth`). Chitti speaks through it whenever it's connected (checked every 5 s), falls back to the wired speaker otherwise, and tries to reconnect every 60 s. 0.25 s of silence is added at the start so the speaker doesn't swallow the first word.
+
 ## 4. Power
 - Power bank USB-A → short, thick USB-A-to-C cable (≤30cm, 3A). Avoid C-to-C (early Pi 4 quirk).
 - Expected runtime ~5–6 h.

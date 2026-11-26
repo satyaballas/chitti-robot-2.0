@@ -1,0 +1,5 @@
+# Chitti: Bluetooth speaker via BlueALSA (copy to ~/.asoundrc on the Pi; put your speaker's address)
+pcm.chitti_bt {
+    type plug
+    slave.pcm "bluealsa:DEV=17:2D:FB:D9:28:E5,PROFILE=a2dp"
+}

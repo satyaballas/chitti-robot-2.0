@@ -48,7 +48,49 @@ def robotize(path, style):
         w.writeframes((x * 32767).astype(np.int16).tobytes())
 
 
+def pad_start(path, seconds=0.25):
+    """Prepend a little silence: Bluetooth speakers often swallow the first moment of sound."""
+    with wave.open(path, "rb") as w:
+        params, data = w.getparams(), w.readframes(w.getnframes())
+    with wave.open(path, "wb") as w:
+        w.setparams(params)
+        w.writeframes(b"\0" * (int(params.framerate * seconds) * params.sampwidth * params.nchannels) + data)
+
+
 class Mouth:
+    _bt_checked, _bt_ok, _bt_retry = 0.0, False, 0.0
+
+    def speaker(self):
+        """(ALSA device, is_bluetooth): the Bluetooth speaker if connected, else the profile's speaker."""
+        bt = getattr(config, "BT_SPEAKER", None)
+        if not bt:
+            return config.SPEAKER_DEVICE, False
+        import time
+        now = time.monotonic()
+        if now - self._bt_checked > 5:                     # ask bluez at most every 5 s
+            self._bt_checked = now
+            try:
+                out = subprocess.run(["bluetoothctl", "info", bt["mac"]], capture_output=True,
+                                     text=True, timeout=3).stdout
+                self._bt_ok = "Connected: yes" in out
+            except Exception:
+                self._bt_ok = False
+            if not self._bt_ok and now - self._bt_retry > 60:  # speaker switched on later? reconnect quietly
+                self._bt_retry = now
+                subprocess.Popen(["bluetoothctl", "connect", bt["mac"]], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        return (bt["pcm"], True) if self._bt_ok else (config.SPEAKER_DEVICE, False)
+
+    def _play(self, path):
+        dev, is_bt = self.speaker()
+        if is_bt:
+            pad_start(path)
+        r = subprocess.run(["aplay", "-q", "-D", dev, path], check=False, stderr=subprocess.DEVNULL)
+        if r.returncode != 0 and is_bt:                    # Bluetooth dropped mid-way: use the wired speaker
+            self._bt_ok = False
+            subprocess.run(["aplay", "-q", "-D", config.SPEAKER_DEVICE, path], check=False,
+                           stderr=subprocess.DEVNULL)
+
     def __init__(self):
         from piper import PiperVoice
         self.voices = {}
@@ -73,8 +115,11 @@ class Mouth:
             with wave.open(self._beep, "wb") as w:
                 w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
                 w.writeframes((tone * fade * 0.4 * 32767).astype(np.int16).tobytes())
-        subprocess.run(["aplay", "-q", "-D", config.SPEAKER_DEVICE, self._beep], check=False,
-                       stderr=subprocess.DEVNULL)
+        import shutil
+        tmp = self._beep + ".play.wav"
+        shutil.copy(self._beep, tmp)                        # _play may pad it for Bluetooth
+        self._play(tmp)
+        os.unlink(tmp)
 
     def say(self, text):
         lang = "te" if TELUGU.search(text) and "te" in self.voices else "en"
@@ -84,6 +129,6 @@ class Mouth:
             with wave.open(path, "wb") as w:
                 self.voices[lang].synthesize_wav(text, w)
             robotize(path, getattr(config, "ROBOT_VOICE", "off"))
-            subprocess.run(["aplay", "-q", "-D", config.SPEAKER_DEVICE, path], check=False)
+            self._play(path)
         finally:
             os.unlink(path)
