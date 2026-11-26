@@ -66,8 +66,10 @@ def main():
         new.debug = args.debug
         if old:   # keep the already-loaded models
             new._whisper, new._wake, new.noise = old._whisper, old._wake, old.noise
+            new._kws, new.wake_name = old._kws, old.wake_name
         else:
             print("Loading speech models...")
+            new._load_wake()
             new.transcribe(__import__("numpy").zeros(16000, dtype="float32"))  # warm up Whisper
         new.start()
         return new
@@ -101,7 +103,7 @@ def main():
                     if follow_up:
                         print("\n(listening for your answer)")
                     else:
-                        print(f"\nWaiting for the wake word ({config.WAKE_WORD})...")
+                        print(f"\nWaiting for the wake word ({ears.wake_name})...")
                         ears.wait_for_wake_word()
                     follow_up = False
                     face.mode("listening")

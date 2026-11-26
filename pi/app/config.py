@@ -12,9 +12,25 @@ CONVERSATION_RESET_SECONDS = 300   # start a fresh conversation after 5 min of s
 CONVERSATION_MAX_MESSAGES = 40     # ...or after this many messages
 
 # --- Wake word ------------------------------------------------------------------
-WAKE_WORD = "hey_jarvis"        # built-in openWakeWord model; a custom "hey_chitti" comes later
-WAKE_THRESHOLD = 0.30           # 0..1, raise if it wakes up by itself, lower if it misses you
-                                # (tested 2026-11-24: "Hey Jarvis" scores 0.25-0.40 for this voice; silence 0.00)
+# "sherpa": open-vocabulary keyword spotter (sherpa-onnx), no training - the phrases below are spelled in the
+#           model's word pieces (make new ones with tools/wake_tokens.py). Falls back to openWakeWord if missing.
+# "openwakeword": the old built-in "Hey Jarvis" model.
+WAKE_ENGINE = "sherpa"
+WAKE_NAME = "Hey Chitti"
+KWS_MODEL = os.path.join(MODELS, "kws", "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
+KWS_PHRASES = [                 # several spellings of how "Chitti" can sound
+    "▁HE Y ▁CHI T TI",          # hey chitti
+    "▁HE Y ▁CHI T TY",          # hey chitty
+    "▁HE Y ▁CHI TI",            # hey chiti
+    "▁HE Y ▁C HE T TI",         # hey chetti
+    "▁HI ▁CHI T TI",            # hi chitti
+    "▁HE Y ▁JA R VI S",         # hey jarvis (old wake word, kept as a backup)
+]
+KWS_THRESHOLD = 0.08            # lower = wakes more easily (and more false wakes); raise if it wakes by itself
+KWS_BOOST = 2.5                 # higher = favours the wake phrases more
+                                # (tested 2026-11-26 with Windows voices: 6/6 caught, 0 false on "hey kitty", "city"...)
+WAKE_WORD = "hey_jarvis"        # openWakeWord engine only
+WAKE_THRESHOLD = 0.30           # openWakeWord engine only (0..1)
 
 # --- Microphone -------------------------------------------------------------------
 # Audio setups, in order of preference: Chitti uses the first one whose mic is plugged in

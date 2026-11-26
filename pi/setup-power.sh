@@ -29,4 +29,4 @@ if systemctl is-enabled --quiet chitti 2>/dev/null; then
   systemctl restart chitti && echo "Restarted chitti to load the new code"
 fi
 echo
-echo "Done. Say \"Hey Jarvis, please shut down\", then \"yes\" after the beep."
+echo "Done. Say \"Hey Chitti, please shut down\", then \"yes\" after the beep."

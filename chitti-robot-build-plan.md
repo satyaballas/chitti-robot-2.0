@@ -42,7 +42,7 @@ AI desk robot built from a toy robot + Raspberry Pi 4 (4GB). Summary of decision
 
 ## 2. AI pipeline (built 2026-11-24; `move()` mocked until IR works)
 Code: `pi/app/` → `~/chitti/app/` on the Pi. Run: `~/chitti/venv/bin/python ~/chitti/app/chitti.py` (`--type` to type instead of speak, `--no-boot` to skip the logo). Settings in `app/config.py`; API key in `~/chitti/.env` (`ANTHROPIC_API_KEY=...`, chmod 600, typed by the user).
-1. Wake word — openWakeWord, built-in "Hey Jarvis" for now (onnx; tflite has no Python 3.13 wheel). Custom "Hey Chitti" later.
+1. Wake word — **"Hey Chitti"** (2026-11-26): sherpa-onnx open-vocabulary keyword spotter (`sherpa-onnx-kws-zipformer-gigaspeech-3.3M`, int8), no training. Phrases are word-piece spellings in `config.KWS_PHRASES` (several spellings of Chitti + "Hey Jarvis" as a backup); threshold 0.08, boost 2.5. PC test with Windows voices: 6/6 caught, 0 false wakes on "hey kitty", "hey siri", "city". Install: `bash setup-wake-word.sh`. New phrases: `tools/wake_tokens.py`. Old engine (openWakeWord "Hey Jarvis") remains as fallback via `WAKE_ENGINE`.
 2. Listening — USB mic at 48 kHz → 16 kHz, webrtcvad stops recording after 0.9 s of silence. Mic capture volume was 0% — set to 75% with `amixer -c 3 sset Mic 75% cap`.
 3. Speech-to-text — faster-whisper offline, `tiny.en` + name hint ("Chitti"): 2.8 s for a 3 s sentence. `base` 5 s; language detection +3.7 s. **Offline Telugu doesn't work** (base: 110 s, nonsense) → listening is English for now; Telugu needs cloud speech-to-text.
 4. Brain — Claude (`claude-opus-5-5`, effort low) via the Messages API with tools `move`, `dance`, `show_expression`; server-side refusal fallback on. Conversation resets after 5 min idle. 
@@ -61,7 +61,7 @@ Decided: Claude, built-in wake word first. **Listening is English only for now**
 - **Idle life** (`app/face.py`): calm (0–10 s) → playful (a little animation every 4–8 s: look around, glance up, yawn, suspicious squint, happy, eye roll, wink, hearts, humming with music notes, sparkle, star eyes, sweat drop) → drowsy at 2 min (heavy lids, nodding off) → asleep at 5 min (closed-eye curves that glow with slow breathing, floating Zzz, ~4 fps to keep the CPU cool). At night (22:00–06:00) drowsy at 30 s, asleep at 2 min. Waking from sleep → startled "!"; heard nothing → confused look + "?".
 - **Emojis** (`display/emoji.py`, original designs): zzz, question, exclaim, music, hearts, sparkle, sweat, tears, anger (overlays) and star_eyes, dizzy (replace the eyes). Claude can show them with the `show_emoji` tool; new expressions `confused` and `suspicious`. Previews: `display/idle-preview.png`, `display/emoji-preview.png`.
 - Runs warm: ~71–72°C with the eyes animating and the wake word always listening (throttling starts at 80°C) — keep the fan, and watch it once inside the robot.
-- Next: custom "Hey Chitti" wake word; faster replies (stream Claude's answer and start speaking at the first sentence).
+- Next: test "Hey Chitti" with real voices on the Pi and tune KWS_THRESHOLD; faster replies (stream Claude's answer and start speaking at the first sentence).
 
 ## 3. Audio
 - Mic: mini USB microphone (₹300–500).

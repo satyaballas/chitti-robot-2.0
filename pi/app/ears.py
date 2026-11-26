@@ -11,7 +11,7 @@ from scipy.signal import resample_poly
 import config
 
 RATE = 16000
-CHUNK = 1280                     # 80 ms at 16 kHz (what openWakeWord expects)
+CHUNK = 1280                     # 80 ms at 16 kHz (openWakeWord needs this size; fine for sherpa too)
 VAD_FRAME = 480                  # 30 ms at 16 kHz (what webrtcvad expects)
 
 
@@ -44,6 +44,8 @@ class Ears:
             blocksize=CHUNK * config.MIC_RATE // RATE, callback=self._on_audio)
         self.vad = webrtcvad.Vad(config.VAD_AGGRESSIVENESS)
         self._wake = None
+        self._kws = None
+        self.wake_name = config.WAKE_NAME
         self._whisper = None
         self.muted = False
         self.debug = False
@@ -79,10 +81,36 @@ class Ears:
             self.q.get_nowait()
 
     # ---- wake word -------------------------------------------------------------
+    def _load_wake(self):
+        import os
+        if config.WAKE_ENGINE == "sherpa" and os.path.isdir(config.KWS_MODEL):
+            import sherpa_onnx
+            kw_file = os.path.join(config.MODELS, "kws", "keywords.txt")
+            with open(kw_file, "w", encoding="utf-8") as f:
+                for p in config.KWS_PHRASES:
+                    f.write(f"{p} :{config.KWS_BOOST} #{config.KWS_THRESHOLD} @WAKE\n")
+            m = config.KWS_MODEL
+            self._kws = sherpa_onnx.KeywordSpotter(
+                tokens=f"{m}/tokens.txt",
+                encoder=f"{m}/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+                decoder=f"{m}/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+                joiner=f"{m}/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+                num_threads=1, keywords_file=kw_file, keywords_score=config.KWS_BOOST,
+                keywords_threshold=config.KWS_THRESHOLD, max_active_paths=4, provider="cpu")
+            self.wake_name = config.WAKE_NAME
+            return
+        if config.WAKE_ENGINE == "sherpa":
+            print(f"[ears] keyword model not found at {config.KWS_MODEL}; using openWakeWord '{config.WAKE_WORD}'")
+        from openwakeword.model import Model
+        self._kws = None
+        self._wake = Model(wakeword_models=[config.WAKE_WORD], inference_framework="onnx")
+        self.wake_name = config.WAKE_WORD.replace("_", " ").title()
+
     def wait_for_wake_word(self):
-        if self._wake is None:
-            from openwakeword.model import Model
-            self._wake = Model(wakeword_models=[config.WAKE_WORD], inference_framework="onnx")
+        if self._wake is None and getattr(self, "_kws", None) is None:
+            self._load_wake()
+        if self._kws is not None:
+            return self._wait_sherpa()
         self._wake.reset()
         self.flush()
         best, levels, t_report = 0.0, [], time.monotonic()
@@ -102,6 +130,26 @@ class Ears:
             if score >= config.WAKE_THRESHOLD:
                 self._wake.reset()
                 return
+
+    def _wait_sherpa(self):
+        stream = self._kws.create_stream()
+        self.flush()
+        levels, t_report = [], time.monotonic()
+        for chunk in self._chunks():
+            rms = float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
+            self.noise = 0.7 * self.noise + 0.3 * rms if rms < self.noise else 0.995 * self.noise + 0.005 * rms
+            stream.accept_waveform(RATE, chunk.astype(np.float32) / 32768.0)
+            while self._kws.is_ready(stream):
+                self._kws.decode_stream(stream)
+                if self._kws.get_result(stream):
+                    self._kws.reset_stream(stream)
+                    return
+            if self.debug:
+                levels.append(rms)
+                if time.monotonic() - t_report >= 2:
+                    print(f"   [debug] mic level avg {np.mean(levels):5.0f} max {np.max(levels):5.0f} "
+                          f"room {self.noise:4.0f} | listening for '{self.wake_name}'")
+                    levels, t_report = [], time.monotonic()
 
     # ---- record one sentence ----------------------------------------------------
     def record(self):

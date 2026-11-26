@@ -3,7 +3,7 @@
 A toy Silverlit robot turned into a talking desk companion. A Raspberry Pi 4 rides on its back and gives it:
 
 - **Eyes:** two animated eyes on a 1.28" round screen behind the visor. They blink and glance, and show moods (happy, sad, angry, thinking…) plus emoji reactions (hearts, music notes, Zzz, star eyes…). When nobody talks to it, Chitti gets playful, then drowsy, and falls asleep.
-- **Ears:** a wake word ("Hey Jarvis" for now) and offline speech-to-text (faster-whisper).
+- **Ears:** "Hey Chitti" wake word (sherpa-onnx keyword spotter, no training) and offline speech-to-text (faster-whisper).
 - **Brain:** Claude, through the Anthropic API. It can choose expressions, move, dance, and shut down or restart by voice (after asking you to confirm).
 - **Voice:** offline text-to-speech (Piper), in English and Telugu.
 - **Legs:** the robot's own wheels, driven by replaying its infrared remote's signals from the Pi.
@@ -51,6 +51,7 @@ On Raspberry Pi OS Lite 64-bit (Trixie): copy `pi/` to `~/chitti/` on the Pi, th
 3. Put your Anthropic API key in `~/chitti/.env` as `ANTHROPIC_API_KEY=...`, then `chmod 600` it. **Never commit this file.**
 4. `sudo bash setup-chitti-service.sh`: starts Chitti at boot.
 5. `sudo bash setup-power.sh`: lets Chitti shut down when you ask it to.
+   Then `bash setup-wake-word.sh` (no sudo): installs the "Hey Chitti" wake word.
 6. Record the robot's remote: see [docs/wiring.md](docs/wiring.md#recording-and-testing-the-remote).
 
 Logs: `journalctl -u chitti -f`. Run by hand (after `sudo systemctl stop chitti`): `~/chitti/venv/bin/python ~/chitti/app/chitti.py --debug`.
