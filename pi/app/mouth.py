@@ -58,13 +58,17 @@ def pad_start(path, seconds=0.25):
 
 
 def scale_volume(path, factor):
-    """Turn a 16-bit wav down (factor < 1), e.g. to protect small speakers on the 3 W amp."""
+    """Normalise a 16-bit wav to full level, then set it to `factor` (0..1) of that.
+    Piper's speech peaks well below full scale, so this makes the small amp speakers louder."""
     import numpy as np
     with wave.open(path, "rb") as w:
         params, x = w.getparams(), np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
+    y = x.astype(np.float32)
+    peak = max(1.0, float(np.abs(y).max()))
+    y = y * (32000.0 / peak) * factor
     with wave.open(path, "wb") as w:
         w.setparams(params)
-        w.writeframes((x.astype(np.float32) * factor).astype(np.int16).tobytes())
+        w.writeframes(np.clip(y, -32767, 32767).astype(np.int16).tobytes())
 
 
 def amp_present():

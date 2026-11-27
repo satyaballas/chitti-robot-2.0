@@ -101,6 +101,29 @@ def main():
             time.sleep(0.2)
             ears.muted = False
 
+    def startup_message():
+        """Spoken greeting once Chitti is ready: time of day, and whether the internet (Claude) is reachable."""
+        if not getattr(config, "STARTUP_MESSAGE", True):
+            return
+        import socket
+        try:
+            socket.create_connection(("api.anthropic.com", 443), timeout=4).close()
+            online = True
+        except OSError:
+            online = False
+        hour = time.localtime().tm_hour
+        part = "Good morning" if 5 <= hour < 12 else "Good afternoon" if hour < 17 else "Good evening"
+        wake = ears.wake_name.split(" or ")[0] if ears else "Hey Chitti"
+        if online:
+            msg = f"{part}! Chitti is online and ready. Say {wake} when you need me."
+        else:
+            msg = (f"{part}! Chitti is awake, but I can't reach the internet, so I can't answer questions yet. "
+                   f"I can still shut down or restart if you ask.")
+        face.express("happy" if online else "sad")
+        speak(msg)
+
+    startup_message()
+
     follow_up = False   # True after Chitti asks a question: listen again without the wake word
     pending_power = None  # "shutdown" / "restart" waiting for a spoken yes (handled offline)
     try:

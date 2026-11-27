@@ -63,11 +63,12 @@ VOICES = {                      # language -> Piper voice name (downloaded into 
     "en": "en_US-ryan-medium",          # others: en_US-lessac-medium, en_GB-alan-medium, en_US-amy-medium
     "te": "te_IN-venkatesh-medium",     # others: te_IN-maya-medium, te_IN-padmavathi-medium
 }
+STARTUP_MESSAGE = True          # greet out loud when Chitti has started (says if the internet is down)
 ROBOT_VOICE = "off"             # robot effect on the voice: off | light | classic | heavy (mouth.py)
 # Bluetooth speaker (paired with setup-bluetooth.sh + bluetoothctl). Used whenever it's connected;
 # otherwise the profile's speaker below. "chitti_bt" is defined in ~/.asoundrc. Set to None to disable.
 BT_SPEAKER = dict(name="pTron BT Speaker", mac="17:2D:FB:D9:28:E5", pcm="chitti_bt")
 # MAX98357A I2S amp + small speaker(s) (setup-amp.sh): used when Bluetooth isn't connected, if present.
 AMP_DEVICE = "plughw:CARD=MAX98357A,DEV=0"
-AMP_VOLUME = 0.7                # 0..1; the amp gives ~3 W, laptop speakers handle ~1-2 W
+AMP_VOLUME = 1.0                # 0..1 of full level (speech is normalised first); lower if the speakers distort
 SPEAKER_DEVICE = "plughw:CARD=MS,DEV=0"   # from the profile (3.5mm jack: "plughw:CARD=Headphones,DEV=0")
