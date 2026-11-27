@@ -57,14 +57,38 @@ def pad_start(path, seconds=0.25):
         w.writeframes(b"\0" * (int(params.framerate * seconds) * params.sampwidth * params.nchannels) + data)
 
 
+def scale_volume(path, factor):
+    """Turn a 16-bit wav down (factor < 1), e.g. to protect small speakers on the 3 W amp."""
+    import numpy as np
+    with wave.open(path, "rb") as w:
+        params, x = w.getparams(), np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
+    with wave.open(path, "wb") as w:
+        w.setparams(params)
+        w.writeframes((x.astype(np.float32) * factor).astype(np.int16).tobytes())
+
+
+def amp_present():
+    """True if the MAX98357A I2S amp is enabled (dtoverlay=max98357a) and seen by ALSA."""
+    try:
+        return "MAX98357A" in open("/proc/asound/cards").read()
+    except OSError:
+        return False
+
+
 class Mouth:
     _bt_checked, _bt_ok, _bt_retry = 0.0, False, 0.0
+
+    def wired(self):
+        """The speaker when Bluetooth isn't connected: the built-in amp if present, else the profile's."""
+        if amp_present():
+            return getattr(config, "AMP_DEVICE", "plughw:CARD=MAX98357A,DEV=0"), True
+        return config.SPEAKER_DEVICE, False
 
     def speaker(self):
         """(ALSA device, is_bluetooth): the Bluetooth speaker if connected, else the profile's speaker."""
         bt = getattr(config, "BT_SPEAKER", None)
         if not bt:
-            return config.SPEAKER_DEVICE, False
+            return self.wired()[0], False
         import time
         now = time.monotonic()
         if now - self._bt_checked > 5:                     # ask bluez at most every 5 s
@@ -79,17 +103,19 @@ class Mouth:
                 self._bt_retry = now
                 subprocess.Popen(["bluetoothctl", "connect", bt["mac"]], stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
-        return (bt["pcm"], True) if self._bt_ok else (config.SPEAKER_DEVICE, False)
+        return (bt["pcm"], True) if self._bt_ok else (self.wired()[0], False)
 
     def _play(self, path):
         dev, is_bt = self.speaker()
-        if is_bt:
-            pad_start(path)
+        wired_dev, is_amp = self.wired()
+        if is_bt or (dev == wired_dev and is_amp):
+            pad_start(path, 0.25 if is_bt else 0.08)       # amp: tiny lead-in avoids a click
+        if dev == wired_dev and is_amp:
+            scale_volume(path, getattr(config, "AMP_VOLUME", 0.7))
         r = subprocess.run(["aplay", "-q", "-D", dev, path], check=False, stderr=subprocess.DEVNULL)
         if r.returncode != 0 and is_bt:                    # Bluetooth dropped mid-way: use the wired speaker
             self._bt_ok = False
-            subprocess.run(["aplay", "-q", "-D", config.SPEAKER_DEVICE, path], check=False,
-                           stderr=subprocess.DEVNULL)
+            subprocess.run(["aplay", "-q", "-D", wired_dev, path], check=False, stderr=subprocess.DEVNULL)
 
     def __init__(self):
         from piper import PiperVoice
