@@ -15,6 +15,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import anthropic  # noqa: E402
 
 import config  # noqa: E402
+
+# Commands handled on the Pi itself (no internet needed), checked before anything goes to Claude.
+import re  # noqa: E402
+LOCAL_POWER = [
+    ("shutdown", re.compile(r"\b(shut ?down|shut yourself down|power (?:off|down)|turn (?:yourself )?off|switch (?:yourself )?off)\b")),
+    ("restart", re.compile(r"\b(restart|reboot)\b")),
+]
+YES = re.compile(r"\b(yes|yeah|yep|yup|sure|ok|okay|do it|confirm|go ahead|please do)\b")
+
 from face import Face  # noqa: E402
 
 
@@ -34,6 +43,8 @@ def main():
     ap.add_argument("--type", action="store_true", help="type messages instead of speaking")
     ap.add_argument("--debug", action="store_true", help="show mic levels / wake scores, save recordings")
     args = ap.parse_args()
+    if os.path.exists(os.path.join(config.HOME, "debug")):   # touch ~/chitti/debug to debug the service
+        args.debug = True
 
     load_env()
     if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -91,6 +102,7 @@ def main():
             ears.muted = False
 
     follow_up = False   # True after Chitti asks a question: listen again without the wake word
+    pending_power = None  # "shutdown" / "restart" waiting for a spoken yes (handled offline)
     try:
         while True:
             face.mode("idle")
@@ -120,6 +132,7 @@ def main():
                     continue
                 if audio is None:
                     print("(heard nothing)")
+                    pending_power = None
                     face.react("confused")
                     time.sleep(1.6)
                     continue
@@ -132,10 +145,34 @@ def main():
                     time.sleep(1.6)
                     continue
 
-            face.mode("thinking")
-            t0 = time.monotonic()
+            # offline power commands: ask to confirm, then act - works without internet
+            said = text.lower()
+            if pending_power:
+                action, pending_power = pending_power, None
+                if YES.search(said):
+                    speak("Shutting down. Goodbye!" if action == "shutdown" else "Restarting. See you soon!")
+                    brain.power_request = action
+                else:
+                    speak("Okay, I'll stay on.")
+                    continue
+            else:
+                for action, pattern in LOCAL_POWER:
+                    if pattern.search(said):
+                        pending_power = action
+                        speak("Do you want me to shut down? Say yes to confirm." if action == "shutdown"
+                              else "Do you want me to restart? Say yes to confirm.")
+                        follow_up = True
+                        break
+                if pending_power:
+                    continue
+
+            if brain.power_request:
+                answer = None
+            else:
+                face.mode("thinking")
+                t0 = time.monotonic()
             try:
-                answer = brain.reply(text)
+                answer = answer if brain.power_request else brain.reply(text)
             except anthropic.AuthenticationError:
                 face.mode("error")
                 answer = "My API key is missing or wrong. Please check the dot env file."
@@ -149,9 +186,10 @@ def main():
                 face.mode("error")
                 print(f"[brain] API error {e.status_code}: {e.message}")
                 answer = "Something went wrong in my brain. Please try again."
-            print(f"  (thought for {time.monotonic() - t0:.1f}s)")
-            speak(answer)
-            follow_up = answer.rstrip().endswith("?")
+            if answer:
+                print(f"  (thought for {time.monotonic() - t0:.1f}s)")
+                speak(answer)
+                follow_up = answer.rstrip().endswith("?")
 
             if brain.power_request:
                 action, brain.power_request = brain.power_request, None

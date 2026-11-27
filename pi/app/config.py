@@ -15,7 +15,7 @@ CONVERSATION_MAX_MESSAGES = 40     # ...or after this many messages
 # "sherpa": open-vocabulary keyword spotter (sherpa-onnx), no training - the phrases below are spelled in the
 #           model's word pieces (make new ones with tools/wake_tokens.py). Falls back to openWakeWord if missing.
 # "openwakeword": the old built-in "Hey Jarvis" model.
-WAKE_ENGINE = "sherpa"
+WAKE_ENGINE = "both"            # both = "Hey Chitti" (sherpa) + "Hey Jarvis" (openWakeWord, proven on our voice)
 WAKE_NAME = "Hey Chitti"
 KWS_MODEL = os.path.join(MODELS, "kws", "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
 KWS_PHRASES = [                 # several spellings of how "Chitti" can sound
@@ -24,7 +24,6 @@ KWS_PHRASES = [                 # several spellings of how "Chitti" can sound
     "▁HE Y ▁CHI TI",            # hey chiti
     "▁HE Y ▁C HE T TI",         # hey chetti
     "▁HI ▁CHI T TI",            # hi chitti
-    "▁HE Y ▁JA R VI S",         # hey jarvis (old wake word, kept as a backup)
 ]
 KWS_THRESHOLD = 0.08            # lower = wakes more easily (and more false wakes); raise if it wakes by itself
 KWS_BOOST = 2.5                 # higher = favours the wake phrases more
@@ -37,7 +36,7 @@ WAKE_THRESHOLD = 0.30           # openWakeWord engine only (0..1)
 # (checked at start-up, and again whenever the mic disappears). mic = part of the name shown by `arecord -l`.
 AUDIO_PROFILES = [
     dict(name="Jabra headset", mic="Jabra", rate=16000, gain=1.0, speaker="plughw:CARD=MS,DEV=0"),
-    dict(name="USB desk mic + 3.5mm jack", mic="USB PnP Sound Device", rate=48000, gain=3.0,
+    dict(name="USB desk mic + 3.5mm jack", mic="USB PnP Sound Device", rate=48000, gain=1.5,
          speaker="plughw:CARD=Headphones,DEV=0"),
 ]
 # Filled in from the chosen profile at start-up:

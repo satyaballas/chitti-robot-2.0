@@ -83,74 +83,74 @@ class Ears:
 
     # ---- wake word -------------------------------------------------------------
     def _load_wake(self):
+        """Load the wake-word engine(s): config.WAKE_ENGINE = "both" | "sherpa" | "openwakeword"."""
         import os
-        if config.WAKE_ENGINE == "sherpa" and os.path.isdir(config.KWS_MODEL):
-            import sherpa_onnx
-            kw_file = os.path.join(config.MODELS, "kws", "keywords.txt")
-            with open(kw_file, "w", encoding="utf-8") as f:
-                for p in config.KWS_PHRASES:
-                    f.write(f"{p} :{config.KWS_BOOST} #{config.KWS_THRESHOLD} @WAKE\n")
-            m = config.KWS_MODEL
-            self._kws = sherpa_onnx.KeywordSpotter(
-                tokens=f"{m}/tokens.txt",
-                encoder=f"{m}/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
-                decoder=f"{m}/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
-                joiner=f"{m}/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
-                num_threads=1, keywords_file=kw_file, keywords_score=config.KWS_BOOST,
-                keywords_threshold=config.KWS_THRESHOLD, max_active_paths=4, provider="cpu")
-            self.wake_name = config.WAKE_NAME
-            return
-        if config.WAKE_ENGINE == "sherpa":
-            print(f"[ears] keyword model not found at {config.KWS_MODEL}; using openWakeWord '{config.WAKE_WORD}'")
-        from openwakeword.model import Model
-        self._kws = None
-        self._wake = Model(wakeword_models=[config.WAKE_WORD], inference_framework="onnx")
-        self.wake_name = config.WAKE_WORD.replace("_", " ").title()
+        eng = config.WAKE_ENGINE
+        self._kws, self._wake, names = None, None, []
+        if eng in ("both", "sherpa"):
+            if os.path.isdir(config.KWS_MODEL):
+                import sherpa_onnx
+                kw_file = os.path.join(config.MODELS, "kws", "keywords.txt")
+                with open(kw_file, "w", encoding="utf-8") as f:
+                    for p in config.KWS_PHRASES:
+                        f.write(f"{p} :{config.KWS_BOOST} #{config.KWS_THRESHOLD} @WAKE\n")
+                m = config.KWS_MODEL
+                self._kws = sherpa_onnx.KeywordSpotter(
+                    tokens=f"{m}/tokens.txt",
+                    encoder=f"{m}/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+                    decoder=f"{m}/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+                    joiner=f"{m}/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+                    num_threads=1, keywords_file=kw_file, keywords_score=config.KWS_BOOST,
+                    keywords_threshold=config.KWS_THRESHOLD, max_active_paths=4, provider="cpu")
+                names.append(config.WAKE_NAME)
+            else:
+                print(f"[ears] keyword model not found at {config.KWS_MODEL}")
+        if eng in ("both", "openwakeword") or self._kws is None:
+            from openwakeword.model import Model
+            self._wake = Model(wakeword_models=[config.WAKE_WORD], inference_framework="onnx")
+            names.append(config.WAKE_WORD.replace("_", " ").title())
+        self.wake_name = " or ".join(names)
 
     def wait_for_wake_word(self):
-        if self._wake is None and getattr(self, "_kws", None) is None:
+        """Block until a wake word is heard (from either engine)."""
+        if self._wake is None and self._kws is None:
             self._load_wake()
-        if self._kws is not None:
-            return self._wait_sherpa()
-        self._wake.reset()
+        stream = self._kws.create_stream() if self._kws else None
+        if self._wake:
+            self._wake.reset()
         self.flush()
         best, levels, t_report = 0.0, [], time.monotonic()
         for chunk in self._chunks():
-            scores = self._wake.predict(chunk)
-            score = max(scores.values())
             rms = float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
             # track the quiet room level: falls quickly, rises slowly (so speech doesn't count as noise)
             self.noise = 0.7 * self.noise + 0.3 * rms if rms < self.noise else 0.995 * self.noise + 0.005 * rms
-            if self.debug:
+            if stream is not None:
+                stream.accept_waveform(RATE, chunk.astype(np.float32) / 32768.0)
+                while self._kws.is_ready(stream):
+                    self._kws.decode_stream(stream)
+                    if self._kws.get_result(stream):
+                        if self.debug:
+                            print("   [debug] woken by the keyword spotter")
+                        return
+            if self._wake:
+                score = max(self._wake.predict(chunk).values())
                 best = max(best, score)
-                levels.append(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
-                if time.monotonic() - t_report >= 2:
-                    print(f"   [debug] mic level avg {np.mean(levels):5.0f} max {np.max(levels):5.0f} "
-                          f"room {self.noise:4.0f} | best wake score {best:.2f} (needs {config.WAKE_THRESHOLD})")
-                    best, levels, t_report = 0.0, [], time.monotonic()
-            if score >= config.WAKE_THRESHOLD:
-                self._wake.reset()
-                return
-
-    def _wait_sherpa(self):
-        stream = self._kws.create_stream()
-        self.flush()
-        levels, t_report = [], time.monotonic()
-        for chunk in self._chunks():
-            rms = float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
-            self.noise = 0.7 * self.noise + 0.3 * rms if rms < self.noise else 0.995 * self.noise + 0.005 * rms
-            stream.accept_waveform(RATE, chunk.astype(np.float32) / 32768.0)
-            while self._kws.is_ready(stream):
-                self._kws.decode_stream(stream)
-                if self._kws.get_result(stream):
-                    self._kws.reset_stream(stream)
+                if score >= config.WAKE_THRESHOLD:
+                    self._wake.reset()
+                    if self.debug:
+                        print(f"   [debug] woken by openWakeWord ({score:.2f})")
                     return
             if self.debug:
                 levels.append(rms)
+                self._recent = np.concatenate([getattr(self, "_recent", np.zeros(0, np.int16)), chunk])[-RATE * 30:]
                 if time.monotonic() - t_report >= 2:
+                    import wave
+                    with wave.open("/tmp/chitti-wake.wav", "wb") as w:      # last 30 s, to test the wake word
+                        w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE)
+                        w.writeframes(self._recent.tobytes())
                     print(f"   [debug] mic level avg {np.mean(levels):5.0f} max {np.max(levels):5.0f} "
-                          f"room {self.noise:4.0f} | listening for '{self.wake_name}'")
-                    levels, t_report = [], time.monotonic()
+                          f"room {self.noise:4.0f} | jarvis score {best:.2f} | listening for '{self.wake_name}'")
+                    best, levels, t_report = 0.0, [], time.monotonic()
 
     # ---- record one sentence ----------------------------------------------------
     def record(self):
