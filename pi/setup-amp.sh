@@ -1,7 +1,10 @@
 #!/bin/bash
 # Chitti robot - enable the MAX98357A I2S amplifier (BCLK GPIO18, LRC GPIO19, DIN GPIO21).
-# Adds dtoverlay=max98357a to /boot/firmware/config.txt. Needs a reboot afterwards.
-# Run on the Pi:  sudo bash ~/chitti/setup-amp.sh
+# Optional: amp SD pin wired to GPIO4 (Pi pin 7) lets Linux switch the amp off when nothing is playing,
+# which removes the idle hiss/static. Pass "sd" to use it:
+#   sudo bash ~/chitti/setup-amp.sh        # amp always on
+#   sudo bash ~/chitti/setup-amp.sh sd     # amp off when silent (SD -> pin 7)
+# Needs a reboot afterwards.
 set -euo pipefail
 
 if [ "$(hostname)" != "chitti" ] && [ "$(hostname)" != "chitti-pi" ]; then
@@ -9,17 +12,19 @@ if [ "$(hostname)" != "chitti" ] && [ "$(hostname)" != "chitti-pi" ]; then
   exit 1
 fi
 if [ "$(id -u)" -ne 0 ]; then
-  echo "Please run with sudo: sudo bash $0" >&2
+  echo "Please run with sudo: sudo bash $0 [sd]" >&2
   exit 1
 fi
 
 CFG=/boot/firmware/config.txt
+LINE="dtoverlay=max98357a"
+[ "${1:-}" = "sd" ] && LINE="dtoverlay=max98357a,sdmode-pin=4"
+cp "$CFG" "$CFG.before-amp"
 if grep -q "^dtoverlay=max98357a" "$CFG"; then
-  echo "MAX98357A overlay already enabled."
+  sed -i "s/^dtoverlay=max98357a.*/$LINE/" "$CFG"
 else
-  cp "$CFG" "$CFG.before-amp"
-  printf '\n# Chitti: MAX98357A I2S speaker amplifier (GPIO18/19/21)\ndtoverlay=max98357a\n' >> "$CFG"
-  echo "Added dtoverlay=max98357a (backup: $CFG.before-amp)"
+  printf '\n# Chitti: MAX98357A I2S speaker amplifier (GPIO18/19/21)\n%s\n' "$LINE" >> "$CFG"
 fi
+grep -n "max98357a" "$CFG"
 sync
-echo "Done. Reboot now:  sudo reboot"
+echo "Done (backup: $CFG.before-amp). Reboot now:  sudo reboot"

@@ -48,7 +48,7 @@ END_SILENCE = 0.9                     # stop recording after this much silence o
 VAD_AGGRESSIVENESS = 3                # 0..3, higher ignores more background noise
 MIC_GAIN = 1.0                        # software boost (from the profile; the small USB mic needs 3.0)
 SPEECH_START = 0.2                    # seconds of clear speech before it counts as "started talking"
-SPEECH_LEVEL = 3.0                    # speech must be this many times louder than the room noise
+SPEECH_LEVEL = 1.8                    # speech must be this many times louder than the room (desk mic at gain 1.5 gives ~2.5-3x)
 BEEP = True                           # short beep when Chitti starts listening
 
 # --- Speech to text (offline) -------------------------------------------------------
@@ -70,5 +70,5 @@ ROBOT_VOICE = "off"             # robot effect on the voice: off | light | class
 BT_SPEAKER = dict(name="pTron BT Speaker", mac="17:2D:FB:D9:28:E5", pcm="chitti_bt")
 # MAX98357A I2S amp + small speaker(s) (setup-amp.sh): used when Bluetooth isn't connected, if present.
 AMP_DEVICE = "plughw:CARD=MAX98357A,DEV=0"
-AMP_VOLUME = 1.0                # 0..1 of full level (speech is normalised first); lower if the speakers distort
+AMP_VOLUME = 0.8                # 0..1 of full level (speech normalised first); 1.0 crackled on the laptop speakers
 SPEAKER_DEVICE = "plughw:CARD=MS,DEV=0"   # from the profile (3.5mm jack: "plughw:CARD=Headphones,DEV=0")
