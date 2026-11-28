@@ -24,6 +24,7 @@ LOCAL_POWER = [
 ]
 YES = re.compile(r"\b(yes|yeah|yep|yup|sure|ok|okay|do it|confirm|go ahead|please do)\b")
 
+import local_commands  # noqa: E402
 from face import Face  # noqa: E402
 
 
@@ -187,6 +188,21 @@ def main():
                         follow_up = True
                         break
                 if pending_power:
+                    continue
+
+                # quick movement commands ("move forward", "turn left for 3 seconds", "dance"): no Claude wait
+                move = local_commands.parse_move(text)
+                if move:
+                    import robot
+                    action, secs = move
+                    print(f"[local] {action} {secs:.1f}s")
+                    speak(local_commands.REPLIES[action])
+                    if action == "dance":
+                        face.dance()
+                        print(robot.dance())
+                    else:
+                        face.action(action, secs)
+                        print(robot.move(action, secs))
                     continue
 
             if brain.power_request:
